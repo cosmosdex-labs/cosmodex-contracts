@@ -1,0 +1,19 @@
+[package]
+name = "pool"
+version = "0.0.0"
+edition = "2021"
+publish = false
+rust-version = "1.80.0"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true  }
+soroban-token-sdk = { version = "22.0.1" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+token = { path = "../token" }
+
