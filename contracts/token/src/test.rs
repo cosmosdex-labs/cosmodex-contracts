@@ -13,7 +13,7 @@ fn create_token<'a>(e: &Env, admin: &Address) -> TokenClient<'a> {
         Token,
         (
             admin,
-            7_u32,
+            18_u32,
             String::from_val(e, &"name"),
             String::from_val(e, &"symbol"),
         ),
