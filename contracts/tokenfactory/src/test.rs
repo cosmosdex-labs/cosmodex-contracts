@@ -36,7 +36,9 @@ fn test_token_factory() {
     let token_symbol = String::from_str(&env, "TTK");
     let token_decimals = 6u32;
     let token_supply = 1_000_000i128;
-    let token_addr = factory.create_token(&admin, &token_name, &token_symbol, &token_decimals, &token_supply, &user, &salt);
+    let token_metadata = String::from_str(&env, "TTKLKDJFDFJKJKJFDFDF");
+
+    let token_addr = factory.create_token(&admin, &token_name, &token_symbol, &token_decimals, &token_supply, &user, &token_metadata, &salt);
 
 
     // Check that the token address is not the user address (sanity check)
@@ -81,6 +83,7 @@ fn test_get_all_deployed_tokens() {
     // Create first token
     let token_name1 = String::from_str(&env, "Token1");
     let token_symbol1 = String::from_str(&env, "TKN1");
+    let token_metadata1 = String::from_str(&env, "TTKLKDJFDFJKJKJFDFDF");
     let token_addr1 = factory.create_token(
         &admin,
         &token_name1,
@@ -88,6 +91,7 @@ fn test_get_all_deployed_tokens() {
         &6u32,
         &1000i128,
         &user1,
+        &token_metadata1,
         &salt1,
     );
 
@@ -114,6 +118,7 @@ fn test_get_all_deployed_tokens() {
         &8u32,
         &2000i128,
         &user2,
+        &token_metadata1,
         &salt2,
     );
 

@@ -172,6 +172,36 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "TokenMetadata"
+                            },
+                            {
+                              "address": "CA5LBCIF6WSOJTOQN2LUSDSAP2LOWHRWPEO7NBKUN7FZ6UNMZ2OAJ5SW"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "string": "TTKLKDJFDFJKJKJFDFDF"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
+                              "symbol": "TokenMetadata"
+                            },
+                            {
+                              "address": "CA5P7WGQTROROPMFNI3GUUMQPI76QFPTYXIRYO7V2OEVKIQOJJ4VHT4P"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "string": "TTKLKDJFDFJKJKJFDFDF"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "TokenWasmHash"
                             }
                           ]
