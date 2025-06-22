@@ -10,6 +10,7 @@ pub enum DataKey {
     Admin,
     TokenWasmHash,
     DeployedTokens(Address, Address), // (token_address, Deployer) sorted
+    AllDeployedTokens,
 }
 
 
@@ -36,15 +37,26 @@ impl TokenFactory {
         env.storage().instance().get(&DataKey::TokenWasmHash).expect("not set")
     }
     
-    pub fn create_token(env: Env, token_name: String, token_symbol: String, token_decimals: u32, token_supply: i128, token_owner: Address, salt: BytesN<32>) -> Address {
+    pub fn create_token(env: Env, admin_addr: Address, token_name: String, token_symbol: String, token_decimals: u32, token_supply: i128, token_owner: Address, salt: BytesN<32>) -> Address {
         let wasm_hash = env
             .storage()
             .instance()
             .get::<_, BytesN<32>>(&DataKey::TokenWasmHash)
             .expect("Wasm hash not set");
-        let token_addr = env.deployer().with_address(env.current_contract_address(), salt).deploy_v2(wasm_hash, (env.current_contract_address(), token_decimals, token_name, token_symbol, token_supply, token_owner));
+        let token_addr = env.deployer().with_address(env.current_contract_address(), salt).deploy_v2(wasm_hash, (admin_addr, token_decimals, token_name, token_symbol, token_supply, token_owner));
         env.storage().instance().set(&DataKey::DeployedTokens(token_addr.clone(), env.current_contract_address()), &true);
+        // Add the token to the list of all deployed tokens
+    let mut tokens = env.storage().instance().get(&DataKey::AllDeployedTokens)
+    .unwrap_or_else(|| Vec::new(&env));
+
+    tokens.push_back(token_addr.clone());
+    env.storage().instance().set(&DataKey::AllDeployedTokens, &tokens);
         token_addr
+    }
+
+    pub fn get_all_deployed_tokens(env: Env) -> Vec<Address> {
+        env.storage().instance().get(&DataKey::AllDeployedTokens)
+            .unwrap_or_else(|| Vec::new(&env))
     }
 
 
