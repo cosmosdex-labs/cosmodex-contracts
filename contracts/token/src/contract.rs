@@ -40,7 +40,7 @@ impl Token {
     pub fn mint(e: Env, to: Address, amount: i128) {
         check_nonnegative_amount(amount);
         let admin = read_administrator(&e);
-        admin.require_auth();
+        // admin.require_auth();
 
         e.storage()
             .instance()
@@ -62,12 +62,7 @@ impl Token {
         TokenUtils::new(&e).events().set_admin(admin, new_admin);
     }
 
-    // #[cfg(test)]
-    // pub fn get_allowance(e: Env, from: Address, spender: Address) -> Option<AllowanceValue> {
-    //     let key = DataKey::Allowance(AllowanceDataKey { from, spender });
-    //     let allowance = e.storage().temporary().get::<_, AllowanceValue>(&key);
-    //     allowance
-    // }
+   
 }
 
 #[contractimpl]

@@ -9,7 +9,7 @@ use soroban_sdk::{
 pub enum DataKey {
     Admin,
     PoolWasmHash,
-    DeployedPools(Address, Address), // (token_0, token_1) sorted
+    DeployedPools(Address, Address),
 }
 
 #[contract]
@@ -45,12 +45,12 @@ impl PoolFactory {
     ) -> Address {
         assert!(token_a != token_b, "Tokens must be different");
         // Sort addresses for uniqueness
-        let (token_0, token_1) = if token_a < token_b {
-            (token_a.clone(), token_b.clone())
-        } else {
-            (token_b.clone(), token_a.clone())
-        };
-        let key = DataKey::DeployedPools(token_0.clone(), token_1.clone());
+        // let (token_0, token_1) = if token_a < token_b {
+        //     (token_a.clone(), token_b.clone())
+        // } else {
+        //     (token_b.clone(), token_a.clone())
+        // };
+        let key = DataKey::DeployedPools(token_a.clone(), token_b.clone());
         if let Some(addr) = env.storage().instance().get::<_, Address>(&key) {
             panic!("Pool already exists for pair");
         }
@@ -64,8 +64,8 @@ impl PoolFactory {
             .deployer()
             .with_address(env.current_contract_address(), salt)
             .deploy_v2(wasm_hash, (
-                token_0,
-                token_1,
+                token_a,
+                token_b,
                 lp_token_name,
                 lp_token_symbol,
             ));
@@ -77,12 +77,12 @@ impl PoolFactory {
 
     /// Get the pool address for a token pair, or None if not exists
     pub fn get_pool(env: Env, token_a: Address, token_b: Address) -> Option<Address> {
-        let (token_0, token_1) = if token_a < token_b {
-            (token_a, token_b)
-        } else {
-            (token_b, token_a)
-        };
-        let key = DataKey::DeployedPools(token_0, token_1);
+        // let (token_0, token_1) = if token_a < token_b {
+        //     (token_a, token_b)
+        // } else {
+        //     (token_b, token_a)
+        // };
+        let key = DataKey::DeployedPools(token_a, token_b);
         env.storage().instance().get(&key)
     }
 }

@@ -10,6 +10,12 @@ use soroban_token_sdk::TokenUtils;
 const FEE_BPS: i128 = 30; // 0.3%
 const BPS_DENOMINATOR: i128 = 10000;
 
+fn check_nonnegative_amount(amount: i128) {
+    if amount < 0 {
+        panic!("negative amount is not allowed: {}", amount)
+    }
+}
+
 #[derive(Clone)]
 #[contracttype]
 pub struct PoolInfo {
@@ -64,6 +70,9 @@ impl LiquidityPool {
         // Transfer tokens from user to pool
         let token_a_client = token::Client::new(&e, &pool_info.token_a);
         let token_b_client = token::Client::new(&e, &pool_info.token_b);
+
+        // token_a_client.transfer(&caller, &e.current_contract_address(), &amount_a);
+        // token_b_client.transfer(&caller, &e.current_contract_address(), &amount_b);
 
         token_a_client.transfer_from(&e.current_contract_address(), &caller, &e.current_contract_address(), &amount_a);
         token_b_client.transfer_from(&e.current_contract_address(), &caller, &e.current_contract_address(), &amount_b);
@@ -176,7 +185,6 @@ impl LiquidityPool {
 
         amount_out
     }
-
     // View functions
     pub fn get_token_a(e: Env) -> Address {
         let pool_info: PoolInfo = e.storage().instance().get(&symbol_short!("pool")).unwrap();
