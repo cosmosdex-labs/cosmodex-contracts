@@ -147,6 +147,21 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "TokenMetadata"
+                            },
+                            {
+                              "address": "CAJXGFIU32R2SF4BVXV2EB2XSSUPUBQMNXWJWB5GYS7WE76TFPPR7Q7P"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "string": "TTKLKDJFDFJKJKJFDFDF"
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "TokenWasmHash"
                             }
                           ]

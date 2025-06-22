@@ -11,6 +11,7 @@ pub enum DataKey {
     TokenWasmHash,
     DeployedTokens(Address, Address), // (token_address, Deployer) sorted
     AllDeployedTokens,
+    TokenMetadata(Address),
 }
 
 
@@ -37,7 +38,7 @@ impl TokenFactory {
         env.storage().instance().get(&DataKey::TokenWasmHash).expect("not set")
     }
     
-    pub fn create_token(env: Env, admin_addr: Address, token_name: String, token_symbol: String, token_decimals: u32, token_supply: i128, token_owner: Address, salt: BytesN<32>) -> Address {
+    pub fn create_token(env: Env, admin_addr: Address, token_name: String, token_symbol: String, token_decimals: u32, token_supply: i128, token_owner: Address, token_metadata: String, salt: BytesN<32>) -> Address {
         let wasm_hash = env
             .storage()
             .instance()
@@ -51,6 +52,7 @@ impl TokenFactory {
 
     tokens.push_back(token_addr.clone());
     env.storage().instance().set(&DataKey::AllDeployedTokens, &tokens);
+    env.storage().instance().set(&DataKey::TokenMetadata(token_addr.clone()), &token_metadata);
         token_addr
     }
 
@@ -59,6 +61,10 @@ impl TokenFactory {
             .unwrap_or_else(|| Vec::new(&env))
     }
 
+    pub fn get_token_metadata(env: Env, token_addr: Address) -> String {
+        env.storage().instance().get(&DataKey::TokenMetadata(token_addr))
+            .expect("Token metadata not set")
+    }
 
 }
 
