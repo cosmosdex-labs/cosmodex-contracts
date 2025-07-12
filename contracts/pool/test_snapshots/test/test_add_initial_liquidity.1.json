@@ -815,6 +815,14 @@
                           "map": [
                             {
                               "key": {
+                                "symbol": "is_xlm_pool"
+                              },
+                              "val": {
+                                "bool": false
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "reserve_a"
                               },
                               "val": {
@@ -850,6 +858,12 @@
                               "val": {
                                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                               }
+                            },
+                            {
+                              "key": {
+                                "symbol": "xlm_token_index"
+                              },
+                              "val": "void"
                             }
                           ]
                         }
