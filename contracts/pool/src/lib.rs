@@ -10,7 +10,7 @@ const FEE_BPS: i128 = 30; // 0.3%
 const BPS_DENOMINATOR: i128 = 10000;
 const MINIMUM_LIQUIDITY: i128 = 1000; // Minimum liquidity to prevent division by zero
 
-// XLM Native Asset Address (this is the native XLM asset identifier)
+// XLM Native Asset Address
 const XLM_ASSET: &str = "native";
 
 // Helper function to check if an address represents native XLM
@@ -89,8 +89,6 @@ impl LiquidityPool {
         // We'll use the contract's internal balance tracking
         Self::subtract_native_xlm_balance(e, amount);
         
-        // The actual XLM transfer would be handled by the calling transaction
-        // This function ensures the contract's accounting is correct
     }
 
     fn transfer_native_xlm_from_user(e: &Env, _from: &Address, amount: i128) {
@@ -99,8 +97,6 @@ impl LiquidityPool {
         // We'll track the incoming XLM in the contract's balance
         Self::add_native_xlm_balance(e, amount);
         
-        // The actual XLM transfer would be handled by the calling transaction
-        // This function ensures the contract's accounting is correct
     }
 
     fn check_nonnegative_amount(amount: i128) {
