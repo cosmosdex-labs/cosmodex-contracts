@@ -699,3 +699,360 @@ fn test_xlm_transfer_functions() {
     // 3. The contract can attribute XLM to specific users
     // 4. No external XLM deposits can be front-run
 }
+
+#[test]
+fn test_fee_tracking_and_claiming() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    
+    // Create test tokens
+    let token_a = create_token(&env, &user1);
+    let token_b = create_token(&env, &user1);
+    
+    // Mint tokens to users
+    token_a.mint(&user1, &50_000_000_000);
+    token_b.mint(&user1, &50_000_000_000);
+    token_a.mint(&user2, &30_000_000_000);
+    token_b.mint(&user2, &30_000_000_000);
+    
+    // Deploy pool contract
+    let pool = deploy_pool(&env, &token_a, &token_b);
+    
+    // Add initial liquidity from user1
+    let initial_amount_a = 20_000_000_000;
+    let initial_amount_b = 20_000_000_000;
+    token_a.approve(&user1, &pool.address, &initial_amount_a, &1000);
+    token_b.approve(&user1, &pool.address, &initial_amount_b, &1000);
+    let liquidity1 = pool.add_liquidity(&user1, &initial_amount_a, &initial_amount_b);
+    
+    // Add liquidity from user2
+    let amount_a2 = 10_000_000_000;
+    let amount_b2 = 10_000_000_000;
+    token_a.approve(&user2, &pool.address, &amount_a2, &1000);
+    token_b.approve(&user2, &pool.address, &amount_b2, &1000);
+    let liquidity2 = pool.add_liquidity(&user2, &amount_a2, &amount_b2);
+    
+    // Record initial balances
+    let initial_balance_a1 = token_a.balance(&user1);
+    let initial_balance_b1 = token_b.balance(&user1);
+    let initial_balance_a2 = token_a.balance(&user2);
+    let initial_balance_b2 = token_b.balance(&user2);
+    
+    // Perform swaps to generate fees
+    let swap_amount = 5_000_000_000;
+    token_a.approve(&user1, &pool.address, &swap_amount, &1000);
+    let amount_out1 = pool.swap(&user1, &token_a.address, &swap_amount);
+    
+    // Perform another swap
+    token_b.approve(&user1, &pool.address, &swap_amount, &1000);
+    let amount_out2 = pool.swap(&user1, &token_b.address, &swap_amount);
+    
+    // Check that fees were tracked
+    let total_fees_earned = pool.get_total_fees_earned();
+    let supply = pool.supply();
+    let bal1 = pool.balance_of(&user1);
+    let bal2 = pool.balance_of(&user2);
+    let unclaimed_fees1 = pool.get_user_unclaimed_fees(&user1);
+    let unclaimed_fees2 = pool.get_user_unclaimed_fees(&user2);
+    std::println!("total_fees_earned: {}", total_fees_earned);
+    std::println!("supply: {}", supply);
+    std::println!("user1 LP: {}", bal1);
+    std::println!("user2 LP: {}", bal2);
+    std::println!("unclaimed_fees1: {}", unclaimed_fees1);
+    std::println!("unclaimed_fees2: {}", unclaimed_fees2);
+    assert!(total_fees_earned > 0, "Fees should be earned from swaps");
+    
+    // Check user's unclaimed fees
+    assert!(unclaimed_fees1 > 0, "User1 should have unclaimed fees");
+    assert!(unclaimed_fees2 > 0, "User2 should have unclaimed fees");
+    
+    // Claim fees for user1
+    let claimed_amount1 = pool.claim_fees(&user1);
+    assert!(claimed_amount1 > 0, "Should claim some fees");
+    
+    // Check that user1 received tokens
+    let final_balance_a1 = token_a.balance(&user1);
+    let final_balance_b1 = token_b.balance(&user1);
+    assert!(final_balance_a1 > initial_balance_a1 || final_balance_b1 > initial_balance_b1, 
+            "User1 should receive tokens from fee claiming");
+    
+    // Claim fees for user2
+    let claimed_amount2 = pool.claim_fees(&user2);
+    assert!(claimed_amount2 > 0, "Should claim some fees");
+    
+    // Check that user2 received tokens
+    let final_balance_a2 = token_a.balance(&user2);
+    let final_balance_b2 = token_b.balance(&user2);
+    assert!(final_balance_a2 > initial_balance_a2 || final_balance_b2 > initial_balance_b2, 
+            "User2 should receive tokens from fee claiming");
+    
+    // Verify that claiming again returns 0 (no more unclaimed fees)
+    let second_claim1 = pool.claim_fees(&user1);
+    let second_claim2 = pool.claim_fees(&user2);
+    assert_eq!(second_claim1, 0, "Second claim should return 0");
+    assert_eq!(second_claim2, 0, "Second claim should return 0");
+}
+
+#[test]
+fn test_fee_claiming_with_xlm_pool() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let user = Address::generate(&env);
+    
+    // Create test tokens (XLM pool simulation)
+    let xlm_token = create_token(&env, &user); // Use create_token instead of create_native_xlm_address
+    let token_b = create_token(&env, &user);
+    
+    // Mint tokens to user
+    token_b.mint(&user, &30_000_000_000);
+    
+    // Deploy pool contract (XLM + token_b)
+    let pool = deploy_pool(&env, &xlm_token, &token_b);
+    
+    // Add initial liquidity
+    let xlm_amount = 20_000_000_000;
+    let token_b_amount = 20_000_000_000;
+    token_b.approve(&user, &pool.address, &token_b_amount, &1000);
+    pool.add_liquidity(&user, &xlm_amount, &token_b_amount);
+    
+    // Record initial balance
+    let initial_balance_b = token_b.balance(&user);
+    
+    // Perform swap to generate fees
+    let swap_amount = 5_000_000_000;
+    token_b.approve(&user, &pool.address, &swap_amount, &1000);
+    let amount_out = pool.swap(&user, &token_b.address, &swap_amount);
+    
+    // Check that fees were tracked
+    let total_fees_earned = pool.get_total_fees_earned();
+    assert!(total_fees_earned > 0, "Fees should be earned from swap");
+    
+    // Check user's unclaimed fees
+    let unclaimed_fees = pool.get_user_unclaimed_fees(&user);
+    assert!(unclaimed_fees > 0, "User should have unclaimed fees");
+    
+    // Claim fees
+    let claimed_amount = pool.claim_fees(&user);
+    assert!(claimed_amount > 0, "Should claim some fees");
+    
+    // Check that user received tokens (at least token_b)
+    let final_balance_b = token_b.balance(&user);
+    assert!(final_balance_b > initial_balance_b, "User should receive token_b from fee claiming");
+}
+
+#[test]
+fn test_fee_claiming_with_zero_lp_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    
+    // Create test tokens
+    let token_a = create_token(&env, &user1);
+    let token_b = create_token(&env, &user1);
+    
+    // Mint tokens to user1 only
+    token_a.mint(&user1, &30_000_000_000);
+    token_b.mint(&user1, &30_000_000_000);
+    
+    // Deploy pool contract
+    let pool = deploy_pool(&env, &token_a, &token_b);
+    
+    // Add liquidity only from user1
+    let amount_a = 20_000_000_000;
+    let amount_b = 20_000_000_000;
+    token_a.approve(&user1, &pool.address, &amount_a, &1000);
+    token_b.approve(&user1, &pool.address, &amount_b, &1000);
+    pool.add_liquidity(&user1, &amount_a, &amount_b);
+    
+    // Perform swap to generate fees
+    let swap_amount = 5_000_000_000;
+    token_a.approve(&user1, &pool.address, &swap_amount, &1000);
+    pool.swap(&user1, &token_a.address, &swap_amount);
+    
+    // User2 has no LP tokens, so should have 0 unclaimed fees
+    let unclaimed_fees2 = pool.get_user_unclaimed_fees(&user2);
+    assert_eq!(unclaimed_fees2, 0, "User2 should have 0 unclaimed fees");
+    
+    // Claiming fees for user2 should return 0
+    let claimed_amount2 = pool.claim_fees(&user2);
+    assert_eq!(claimed_amount2, 0, "User2 should claim 0 fees");
+}
+
+#[test]
+fn test_fee_claiming_after_removing_liquidity() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let user = Address::generate(&env);
+    
+    // Create test tokens
+    let token_a = create_token(&env, &user);
+    let token_b = create_token(&env, &user);
+    
+    // Mint tokens
+    token_a.mint(&user, &40_000_000_000);
+    token_b.mint(&user, &40_000_000_000);
+    
+    // Deploy pool contract
+    let pool = deploy_pool(&env, &token_a, &token_b);
+    
+    // Add initial liquidity
+    let amount_a = 20_000_000_000;
+    let amount_b = 20_000_000_000;
+    token_a.approve(&user, &pool.address, &amount_a, &1000);
+    token_b.approve(&user, &pool.address, &amount_b, &1000);
+    let liquidity = pool.add_liquidity(&user, &amount_a, &amount_b);
+    
+    // Perform swap to generate fees
+    let swap_amount = 5_000_000_000;
+    token_a.approve(&user, &pool.address, &swap_amount, &1000);
+    pool.swap(&user, &token_a.address, &swap_amount);
+    
+    // Check unclaimed fees before removing liquidity
+    let unclaimed_fees_before = pool.get_user_unclaimed_fees(&user);
+    assert!(unclaimed_fees_before > 0, "Should have unclaimed fees");
+    
+    // Remove all liquidity
+    pool.remove_liquidity(&user, &liquidity);
+    
+    // Check unclaimed fees after removing liquidity
+    let unclaimed_fees_after = pool.get_user_unclaimed_fees(&user);
+    assert_eq!(unclaimed_fees_after, 0, "Should have 0 unclaimed fees after removing all liquidity");
+    
+    // Claiming fees should return 0
+    let claimed_amount = pool.claim_fees(&user);
+    assert_eq!(claimed_amount, 0, "Should claim 0 fees after removing all liquidity");
+}
+
+#[test]
+fn test_volume_tracking() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let user = Address::generate(&env);
+    
+    // Create test tokens
+    let token_a = create_token(&env, &user);
+    let token_b = create_token(&env, &user);
+    
+    // Mint tokens
+    token_a.mint(&user, &30_000_000_000);
+    token_b.mint(&user, &30_000_000_000);
+    
+    // Deploy pool contract
+    let pool = deploy_pool(&env, &token_a, &token_b);
+    
+    // Add initial liquidity
+    let amount_a = 20_000_000_000;
+    let amount_b = 20_000_000_000;
+    token_a.approve(&user, &pool.address, &amount_a, &1000);
+    token_b.approve(&user, &pool.address, &amount_b, &1000);
+    pool.add_liquidity(&user, &amount_a, &amount_b);
+    
+    // Check initial volume
+    let initial_volume_24h = pool.get_total_volume_24h();
+    let initial_volume_7d = pool.get_total_volume_7d();
+    let initial_volume_all_time = pool.get_total_volume_all_time();
+    assert_eq!(initial_volume_24h, 0, "Initial 24h volume should be 0");
+    assert_eq!(initial_volume_7d, 0, "Initial 7d volume should be 0");
+    assert_eq!(initial_volume_all_time, 0, "Initial all-time volume should be 0");
+    
+    // Perform swaps to generate volume
+    let swap_amount = 5_000_000_000;
+    token_a.approve(&user, &pool.address, &swap_amount, &1000);
+    pool.swap(&user, &token_a.address, &swap_amount);
+    
+    // Check volume after swap
+    let volume_24h_after = pool.get_total_volume_24h();
+    let volume_7d_after = pool.get_total_volume_7d();
+    let volume_all_time_after = pool.get_total_volume_all_time();
+    assert!(volume_24h_after > 0, "24h volume should increase after swap");
+    assert!(volume_7d_after > 0, "7d volume should increase after swap");
+    assert!(volume_all_time_after > 0, "All-time volume should increase after swap");
+    
+    // Perform another swap
+    token_b.approve(&user, &pool.address, &swap_amount, &1000);
+    pool.swap(&user, &token_b.address, &swap_amount);
+    
+    // Check volume after second swap
+    let final_volume_24h = pool.get_total_volume_24h();
+    let final_volume_7d = pool.get_total_volume_7d();
+    let final_volume_all_time = pool.get_total_volume_all_time();
+    assert!(final_volume_24h > volume_24h_after, "24h volume should increase further");
+    assert!(final_volume_7d > volume_7d_after, "7d volume should increase further");
+    assert!(final_volume_all_time > volume_all_time_after, "All-time volume should increase further");
+}
+
+#[test]
+fn test_user_liquidity_position() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let user = Address::generate(&env);
+    
+    // Create test tokens
+    let token_a = create_token(&env, &user);
+    let token_b = create_token(&env, &user);
+    
+    // Mint tokens
+    token_a.mint(&user, &30_000_000_000);
+    token_b.mint(&user, &30_000_000_000);
+    
+    // Deploy pool contract
+    let pool = deploy_pool(&env, &token_a, &token_b);
+    
+    // Add initial liquidity
+    let amount_a = 20_000_000_000;
+    let amount_b = 20_000_000_000;
+    token_a.approve(&user, &pool.address, &amount_a, &1000);
+    token_b.approve(&user, &pool.address, &amount_b, &1000);
+    let liquidity = pool.add_liquidity(&user, &amount_a, &amount_b);
+    
+    // Get user's liquidity position
+    let (user_balance, user_token_a, user_token_b) = pool.get_user_liquidity_position(&user);
+    
+    // Verify position data
+    assert_eq!(user_balance, liquidity, "User balance should match liquidity");
+    assert!(user_token_a > 0, "User should have token A in position");
+    assert!(user_token_b > 0, "User should have token B in position");
+    
+    // Verify that position values are proportional to user's share
+    let total_supply = pool.supply();
+    let (reserve_a, reserve_b) = pool.get_reserves();
+    let expected_token_a = (reserve_a * user_balance) / total_supply;
+    let expected_token_b = (reserve_b * user_balance) / total_supply;
+    
+    assert_eq!(user_token_a, expected_token_a, "User token A should match expected");
+    assert_eq!(user_token_b, expected_token_b, "User token B should match expected");
+}
+
+#[test]
+fn test_pool_tvl() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let user = Address::generate(&env);
+    
+    // Create test tokens
+    let token_a = create_token(&env, &user);
+    let token_b = create_token(&env, &user);
+    
+    // Deploy pool contract
+    let pool = deploy_pool(&env, &token_a, &token_b);
+    
+    // Check TVL before adding liquidity
+    let tvl_before = pool.get_pool_tvl();
+    assert_eq!(tvl_before, 0, "TVL should be 0 before adding liquidity");
+    
+    // Add liquidity
+    let amount_a = 20_000_000_000;
+    let amount_b = 20_000_000_000;
+    token_a.mint(&user, &amount_a);
+    token_b.mint(&user, &amount_b);
+    token_a.approve(&user, &pool.address, &amount_a, &1000);
+    token_b.approve(&user, &pool.address, &amount_b, &1000);
+    pool.add_liquidity(&user, &amount_a, &amount_b);
+    
+    // Check TVL after adding liquidity
+    let tvl_after = pool.get_pool_tvl();
+    assert_eq!(tvl_after, amount_a + amount_b, "TVL should equal sum of reserves");
+}

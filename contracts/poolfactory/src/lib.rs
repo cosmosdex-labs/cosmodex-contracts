@@ -10,6 +10,7 @@ pub enum DataKey {
     Admin,
     PoolWasmHash,
     DeployedPools(Address, Address),
+    AllPools, // Track all deployed pools for global calculations
 }
 
 #[contract]
@@ -71,6 +72,12 @@ impl PoolFactory {
             ));
         // // Store mapping
         env.storage().instance().set(&key, &pool_addr);
+        
+        // Track pool in global list
+        let mut all_pools = env.storage().instance().get::<_, Vec<Address>>(&DataKey::AllPools).unwrap_or(vec![&env]);
+        all_pools.push_back(pool_addr.clone());
+        env.storage().instance().set(&DataKey::AllPools, &all_pools);
+        
         pool_addr
         // token_a
     }
@@ -84,6 +91,17 @@ impl PoolFactory {
         // };
         let key = DataKey::DeployedPools(token_a, token_b);
         env.storage().instance().get(&key)
+    }
+
+    /// Get all deployed pools
+    pub fn get_all_pools(env: Env) -> Vec<Address> {
+        env.storage().instance().get(&DataKey::AllPools).unwrap_or(vec![&env])
+    }
+
+    /// Get total number of pools
+    pub fn get_pool_count(env: Env) -> u32 {
+        let all_pools = Self::get_all_pools(env);
+        all_pools.len() as u32
     }
 }
 
