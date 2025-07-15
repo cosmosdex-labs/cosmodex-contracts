@@ -52,6 +52,23 @@ pub struct PoolInfo {
     pub xlm_token_index: Option<i32>, // 0 for token_a, 1 for token_b, None if no XLM
 }
 
+#[derive(Clone)]
+#[contracttype]
+pub struct FeeTracker {
+    pub total_fees_earned: i128,      // Total fees earned by the pool
+    pub fees_per_lp_token: i128,      // Fees per LP token (scaled by 1e18)
+    pub last_update_ledger: u32,      // Last ledger when fees were updated
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct VolumeTracker {
+    pub total_volume_24h: i128,       // 24-hour volume
+    pub total_volume_7d: i128,        // 7-day volume
+    pub total_volume_all_time: i128,  // All-time volume
+    pub last_swap_ledger: u32,        // Last ledger when a swap occurred
+}
+
 #[contract]
 pub struct LiquidityPool;
 
@@ -104,7 +121,92 @@ impl LiquidityPool {
             panic!("negative amount is not allowed: {}", amount)
         }
     }
-    
+
+    // Fee tracking functions
+    fn get_fee_tracker(e: &Env) -> FeeTracker {
+        e.storage().instance().get(&DataKey::FeeTracker).unwrap_or(FeeTracker {
+            total_fees_earned: 0,
+            fees_per_lp_token: 0,
+            last_update_ledger: 0,
+        })
+    }
+
+    fn set_fee_tracker(e: &Env, tracker: &FeeTracker) {
+        e.storage().instance().set(&DataKey::FeeTracker, tracker);
+    }
+
+    fn update_fees(e: &Env, fee_amount: i128) {
+        let mut tracker = Self::get_fee_tracker(e);
+        let current_ledger = e.ledger().sequence();
+        tracker.total_fees_earned = checked_add(tracker.total_fees_earned, fee_amount);
+        let total_supply = Self::total_supply(e.clone());
+        if total_supply > 0 {
+            // Use high precision for per-LP-token fee math (1e18 scaling)
+            let fee_increment = checked_div(checked_mul(fee_amount, 1_000_000_000_000_000_000), total_supply);
+            tracker.fees_per_lp_token = checked_add(tracker.fees_per_lp_token, fee_increment);
+        }
+        tracker.last_update_ledger = current_ledger;
+        Self::set_fee_tracker(e, &tracker);
+    }
+
+    fn get_user_last_fees_per_lp_token(e: &Env, user: &Address) -> i128 {
+        e.storage().instance().get(&DataKey::UserLastFeesPerLpToken(user.clone())).unwrap_or(0)
+    }
+    fn set_user_last_fees_per_lp_token(e: &Env, user: &Address, value: i128) {
+        e.storage().instance().set(&DataKey::UserLastFeesPerLpToken(user.clone()), &value);
+    }
+
+    // Calculate user's unclaimed fees using per-LP-token fee accounting
+    fn calculate_user_unclaimed_fees(e: &Env, user: &Address) -> i128 {
+        let tracker = Self::get_fee_tracker(e);
+        let user_balance = Self::balance_of(e.clone(), user.clone());
+        if user_balance == 0 {
+            return 0;
+        }
+        let last_claimed = Self::get_user_last_fees_per_lp_token(e, user);
+        let delta = checked_sub(tracker.fees_per_lp_token, last_claimed);
+        // Divide by 1e18 to get actual fee amount
+        checked_div(checked_mul(user_balance, delta), 1_000_000_000_000_000_000)
+    }
+
+    // Volume tracking functions
+    fn get_volume_tracker(e: &Env) -> VolumeTracker {
+        e.storage().instance().get(&DataKey::VolumeTracker).unwrap_or(VolumeTracker {
+            total_volume_24h: 0,
+            total_volume_7d: 0,
+            total_volume_all_time: 0,
+            last_swap_ledger: 0,
+        })
+    }
+
+    fn set_volume_tracker(e: &Env, tracker: &VolumeTracker) {
+        e.storage().instance().set(&DataKey::VolumeTracker, tracker);
+    }
+
+    fn update_volume(e: &Env, volume_amount: i128) {
+        let mut tracker = Self::get_volume_tracker(e);
+        let current_ledger = e.ledger().sequence();
+        
+        // Update all-time volume
+        tracker.total_volume_all_time = checked_add(tracker.total_volume_all_time, volume_amount);
+        
+        // For simplicity, we'll update 24h and 7d volume as all-time for now
+        tracker.total_volume_24h = tracker.total_volume_all_time;
+        tracker.total_volume_7d = tracker.total_volume_all_time;
+        
+        tracker.last_swap_ledger = current_ledger;
+        Self::set_volume_tracker(e, &tracker);
+    }
+
+    // User fee tracking functions
+    fn get_user_fees_claimed(e: &Env, user: &Address) -> i128 {
+        e.storage().instance().get(&DataKey::UserFeesClaimed(user.clone())).unwrap_or(0)
+    }
+
+    fn set_user_fees_claimed(e: &Env, user: &Address, amount: i128) {
+        e.storage().instance().set(&DataKey::UserFeesClaimed(user.clone()), &amount);
+    }
+
     pub fn __constructor(
         e: Env,
         token_a: Address,
@@ -112,7 +214,7 @@ impl LiquidityPool {
         lp_token_name: String,
         lp_token_symbol: String,
     ) {
-        // Check if this is an XLM pool by comparing addresses
+        // Determine if this is an XLM pool
         let is_xlm_pool = is_native_xlm(&token_a) || is_native_xlm(&token_b);
         let xlm_token_index = if is_native_xlm(&token_a) {
             Some(0)
@@ -121,8 +223,7 @@ impl LiquidityPool {
         } else {
             None
         };
-        
-        // Store pool info
+
         let pool_info = PoolInfo {
             token_a: token_a.clone(),
             token_b: token_b.clone(),
@@ -131,11 +232,8 @@ impl LiquidityPool {
             is_xlm_pool,
             xlm_token_index,
         };
-        e.storage().instance().set(&symbol_short!("pool"), &pool_info);
 
-        // Initialize LP token
-        let admin = e.current_contract_address();
-        e.storage().instance().set(&symbol_short!("admin"), &admin);
+        e.storage().instance().set(&symbol_short!("pool"), &pool_info);
         e.storage().instance().set(&symbol_short!("name"), &lp_token_name);
         e.storage().instance().set(&symbol_short!("symbol"), &lp_token_symbol);
         e.storage().instance().set(&symbol_short!("decimals"), &18u32);
@@ -407,6 +505,13 @@ impl LiquidityPool {
         assert!(amount_out > 0, "Insufficient output amount");
         assert!(amount_out <= reserve_out, "Insufficient pool reserves");
 
+        // Calculate and track fees
+        let fee_amount = checked_sub(amount_in, amount_in_with_fee);
+        Self::update_fees(&e, fee_amount);
+
+        // Track volume
+        Self::update_volume(&e, amount_in);
+
         // Handle output token transfer based on whether it's XLM
         if pool_info.is_xlm_pool && (is_native_xlm(&token_in) || is_native_xlm(&token_out)) {
             Self::handle_xlm_swap_output(&e, &caller, &token_in, &token_out, amount_out);
@@ -485,6 +590,168 @@ impl LiquidityPool {
 
     pub fn supply(e: Env) -> i128 {
         Self::total_supply(e)
+    }
+
+    // New fee tracking methods
+    pub fn get_total_fees_earned(e: Env) -> i128 {
+        let tracker = Self::get_fee_tracker(&e);
+        tracker.total_fees_earned
+    }
+
+    pub fn get_fees_per_lp_token(e: Env) -> i128 {
+        let tracker = Self::get_fee_tracker(&e);
+        tracker.fees_per_lp_token
+    }
+
+    pub fn get_user_unclaimed_fees(e: Env, user: Address) -> i128 {
+        Self::calculate_user_unclaimed_fees(&e, &user)
+    }
+
+    pub fn claim_fees(e: Env, caller: Address) -> i128 {
+        caller.require_auth();
+        
+        let unclaimed_fees = Self::calculate_user_unclaimed_fees(&e, &caller);
+        if unclaimed_fees <= 0 {
+            return 0;
+        }
+        
+        // Get pool info
+        let pool_info: PoolInfo = e.storage().instance().get(&symbol_short!("pool")).unwrap();
+        let total_supply = Self::total_supply(e.clone());
+        let user_balance = Self::balance_of(e.clone(), caller.clone());
+        
+        // Calculate user's share of the pool
+        let user_share = if total_supply > 0 {
+            checked_div(checked_mul(user_balance, 10000), total_supply) // In basis points
+        } else {
+            0
+        };
+        
+        // Calculate fee amounts for each token based on user's share
+        let fee_tracker = Self::get_fee_tracker(&e);
+        let total_fees_earned = fee_tracker.total_fees_earned;
+        
+        // Calculate user's share of fees for each token
+        let user_fee_share_a = if total_supply > 0 {
+            checked_div(checked_mul(pool_info.reserve_a, user_share), 10000)
+        } else {
+            0
+        };
+        
+        let user_fee_share_b = if total_supply > 0 {
+            checked_div(checked_mul(pool_info.reserve_b, user_share), 10000)
+        } else {
+            0
+        };
+        
+        // Update claimed fees
+        let current_claimed = Self::get_user_fees_claimed(&e, &caller);
+        let new_claimed = checked_add(current_claimed, unclaimed_fees);
+        Self::set_user_fees_claimed(&e, &caller, new_claimed);
+        
+        // Update user's last claimed fees_per_lp_token
+        let tracker = Self::get_fee_tracker(&e);
+        Self::set_user_last_fees_per_lp_token(&e, &caller, tracker.fees_per_lp_token);
+        
+        // Transfer fee tokens to user based on whether it's an XLM pool
+        if pool_info.is_xlm_pool {
+            Self::handle_xlm_fee_transfer(&e, &caller, &pool_info, user_fee_share_a, user_fee_share_b);
+        } else {
+            // Standard token transfer for non-XLM pools
+            let token_a_client = token::Client::new(&e, &pool_info.token_a);
+            let token_b_client = token::Client::new(&e, &pool_info.token_b);
+            
+            // Only transfer if amounts are greater than 0
+            if user_fee_share_a > 0 {
+                token_a_client.transfer(&e.current_contract_address(), &caller, &user_fee_share_a);
+            }
+            if user_fee_share_b > 0 {
+                token_b_client.transfer(&e.current_contract_address(), &caller, &user_fee_share_b);
+            }
+        }
+        
+        // Return the total fee amount claimed
+        checked_add(user_fee_share_a, user_fee_share_b)
+    }
+
+    // Handle XLM fee transfer
+    fn handle_xlm_fee_transfer(e: &Env, caller: &Address, pool_info: &PoolInfo, fee_share_a: i128, fee_share_b: i128) {
+        match pool_info.xlm_token_index {
+            Some(0) => {
+                // Token A is XLM, Token B is contract token
+                let token_b_client = token::Client::new(e, &pool_info.token_b);
+                
+                // Transfer contract token fees (only if amount > 0)
+                if fee_share_b > 0 {
+                    token_b_client.transfer(&e.current_contract_address(), caller, &fee_share_b);
+                }
+                // Transfer XLM fees (only if amount > 0)
+                if fee_share_a > 0 {
+                    Self::transfer_native_xlm_to_user(e, caller, fee_share_a);
+                }
+            },
+            Some(1) => {
+                // Token A is contract token, Token B is XLM
+                let token_a_client = token::Client::new(e, &pool_info.token_a);
+                
+                // Transfer contract token fees (only if amount > 0)
+                if fee_share_a > 0 {
+                    token_a_client.transfer(&e.current_contract_address(), caller, &fee_share_a);
+                }
+                // Transfer XLM fees (only if amount > 0)
+                if fee_share_b > 0 {
+                    Self::transfer_native_xlm_to_user(e, caller, fee_share_b);
+                }
+            },
+            Some(_) => {
+                panic!("Invalid XLM token index");
+            },
+            None => {
+                panic!("XLM pool but no XLM token index found");
+            }
+        }
+    }
+
+    // New volume tracking methods
+    pub fn get_total_volume_24h(e: Env) -> i128 {
+        let tracker = Self::get_volume_tracker(&e);
+        tracker.total_volume_24h
+    }
+
+    pub fn get_total_volume_7d(e: Env) -> i128 {
+        let tracker = Self::get_volume_tracker(&e);
+        tracker.total_volume_7d
+    }
+
+    pub fn get_total_volume_all_time(e: Env) -> i128 {
+        let tracker = Self::get_volume_tracker(&e);
+        tracker.total_volume_all_time
+    }
+
+    // Enhanced liquidity position methods
+    pub fn get_user_liquidity_position(e: Env, user: Address) -> (i128, i128, i128) {
+        let user_balance = Self::balance_of(e.clone(), user.clone());
+        let total_supply = Self::total_supply(e.clone());
+        let pool_info: PoolInfo = e.storage().instance().get(&symbol_short!("pool")).unwrap();
+        
+        if total_supply == 0 || user_balance == 0 {
+            return (0, 0, 0);
+        }
+        
+        // Calculate user's share of the pool
+        let user_share = checked_div(checked_mul(user_balance, 10000), total_supply); // In basis points
+        
+        // Calculate user's token amounts
+        let user_token_a = checked_div(checked_mul(pool_info.reserve_a, user_balance), total_supply);
+        let user_token_b = checked_div(checked_mul(pool_info.reserve_b, user_balance), total_supply);
+        
+        (user_balance, user_token_a, user_token_b)
+    }
+
+    pub fn get_pool_tvl(e: Env) -> i128 {
+        let pool_info: PoolInfo = e.storage().instance().get(&symbol_short!("pool")).unwrap();
+        // Simplified TVL calculation - in practice you'd use price oracles
+        checked_add(pool_info.reserve_a, pool_info.reserve_b)
     }
 
     fn total_supply(e: Env) -> i128 {
@@ -623,6 +890,10 @@ enum DataKey {
     Allowance(Address, Address),
     TotalSupply,
     NativeXlmBalance, // Track native XLM balance in the contract
+    FeeTracker, // Track total fees earned and fees per LP token
+    VolumeTracker, // Track total volume and last swap ledger
+    UserFeesClaimed(Address), // Track user's total claimed fees (legacy, not used)
+    UserLastFeesPerLpToken(Address), // Track user's last claimed fees_per_lp_token
 }
 
 fn sqrt(x: i128) -> i128 {
