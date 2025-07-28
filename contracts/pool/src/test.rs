@@ -806,6 +806,7 @@ fn test_fee_claiming_with_xlm_pool() {
     let token_b = create_token(&env, &user);
     
     // Mint tokens to user
+    xlm_token.mint(&user, &30_000_000_000);
     token_b.mint(&user, &30_000_000_000);
     
     // Deploy pool contract (XLM + token_b)
@@ -814,6 +815,7 @@ fn test_fee_claiming_with_xlm_pool() {
     // Add initial liquidity
     let xlm_amount = 20_000_000_000;
     let token_b_amount = 20_000_000_000;
+    xlm_token.approve(&user, &pool.address, &xlm_amount, &1000);
     token_b.approve(&user, &pool.address, &token_b_amount, &1000);
     pool.add_liquidity(&user, &xlm_amount, &token_b_amount);
     
