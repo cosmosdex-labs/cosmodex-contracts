@@ -308,14 +308,14 @@ impl LiquidityPool {
                 // Transfer XLM from caller to contract
                 Self::transfer_native_xlm_from_user(e, caller, amount_a);
                 // Transfer contract token from caller to pool
-                token_b_client.transfer_from(&e.current_contract_address(), caller, &e.current_contract_address(), &amount_b);
+                token_b_client.transfer_from(&caller, &e.current_contract_address(), &e.current_contract_address(), &amount_b);
             },
             Some(1) => {
                 // Token A is contract token, Token B is XLM
                 let token_a_client = token::Client::new(e, &pool_info.token_a);
                 
                 // Transfer contract token from caller to pool
-                token_a_client.transfer_from(&e.current_contract_address(), caller, &e.current_contract_address(), &amount_a);
+                token_a_client.transfer_from(&caller, &e.current_contract_address(), &e.current_contract_address(), &amount_a);
                 // Transfer XLM from caller to contract
                 Self::transfer_native_xlm_from_user(e, caller, amount_b);
             },
@@ -542,7 +542,7 @@ impl LiquidityPool {
         } else {
             // Input is contract token
             let token_in_client = token::Client::new(e, token_in);
-            token_in_client.transfer_from(&e.current_contract_address(), caller, &e.current_contract_address(), &amount_in);
+            token_in_client.transfer_from(&caller, &e.current_contract_address(), &e.current_contract_address(), &amount_in);
         }
     }
 
@@ -554,7 +554,7 @@ impl LiquidityPool {
         } else {
             // Output is contract token
             let token_out_client = token::Client::new(e, token_out);
-            token_out_client.transfer(&e.current_contract_address(), caller, &amount_out);
+            token_out_client.transfer(&e.current_contract_address(), &caller, &amount_out);
         }
     }
 
